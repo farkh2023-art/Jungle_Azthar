@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutoriel Configuration APIs AI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background: linear-gradient(135deg, #14213D 0%, #1a2951 100%);
+            color: #E5E5E5;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding: 40px 0;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, #8A2BE2, #00FFFF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.8;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .nav-tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 10px;
+            backdrop-filter: blur(10px);
+            overflow-x: auto;
+        }
+
+        .nav-tab {
+            background: transparent;
+            border: none;
+            color: #E5E5E5;
+            padding: 15px 25px;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            white-space: nowrap;
+            margin: 0 5px;
+        }
+
+        .nav-tab:hover {
+            background: rgba(138, 43, 226, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .nav-tab.active {
+            background: linear-gradient(45deg, #8A2BE2, #00FFFF);
+            color: white;
+            box-shadow: 0 5px 15px rgba(138, 43, 226, 0.4);
+        }
+
+        .content-section {
+            display: none;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 40px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .content-section.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .api-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(138, 43, 226, 0.3);
+        }
+
+        .api-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(45deg, #8A2BE2, #00FFFF);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-right: 20px;
+            color: white;
+            font-weight: bold;
+        }
+
+        .api-info h2 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            color: #00FFFF;
+        }
+
+        .api-info p {
+            opacity: 0.8;
+            font-size: 1.1rem;
+        }
+
+        .config-link {
+            display: inline-block;
+            background: linear-gradient(45deg, #8A2BE2, #00FFFF);
+            color: white;
+            padding: 12px 30px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(138, 43, 226, 0.3);
+        }
+
+        .config-link:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(138, 43, 226, 0.5);
+        }
+
+        .steps {
+            margin-top: 30px;
+        }
+
+        .step {
+            background: rgba(0, 255, 255, 0.05);
+            border-left: 4px solid #00FFFF;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 0 10px 10px 0;
+            transition: all 0.3s ease;
+        }
+
+        .step:hover {
+            background: rgba(0, 255, 255, 0.1);
+            transform: translateX(5px);
+        }
+
+        .step-number {
+            background: #8A2BE2;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+        }
+
+        .step h3 {
+            color: #00FFFF;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(138, 43, 226, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+        }
+
+        .highlight {
+            color: #8A2BE2;
+            font-weight: bold;
+        }
+
+        .warning {
+            background: rgba(255, 165, 0, 0.1);
+            border-left: 4px solid #FFA500;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 10px 10px 0;
+        }
+
+        .info {
+            background: rgba(0, 255, 255, 0.1);
+            border-left: 4px solid #00FFFF;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 10px 10px 0;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .nav-tabs {
+                flex-direction: column;
+            }
+            
+            .nav-tab {
+                margin: 5px 0;
+            }
+            
+            .content-section {
+                padding: 20px;
+            }
+            
+            .api-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .api-icon {
+                margin-right: 0;
+                margin-bottom: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Configuration APIs AI</h1>
+            <p>Guide complet pour configurer et intégrer les principales APIs d'intelligence artificielle dans votre projet</p>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showSection('claude')">Claude API</button>
+            <button class="nav-tab" onclick="showSection('deepseek')">DeepSeek API</button>
+            <button class="nav-tab" onclick="showSection('elevenlabs')">ElevenLabs</button>
+            <button class="nav-tab" onclick="showSection('azure')">Azure Speech</button>
+            <button class="nav-tab" onclick="showSection('openai')">OpenAI TTS</button>
+        </div>
+
+        <div id="claude" class="content-section active">
+            <div class="api-header">
+                <div class="api-icon">🧠</div>
+                <div class="api-info">
+                    <h2>Claude API (Anthropic)</h2>
+                    <p>Assistant IA conversationnel principal pour le chat et les interactions complexes</p>
+                </div>
+            </div>
+            
+            <a href="https://console.anthropic.com/" target="_blank" class="config-link">
+                🔗 Accéder à la Console Anthropic
+            </a>
+
+            <div class="steps">
+                <div class="step">
+                    <h3><span class="step-number">1</span>Créer un compte</h3>
+                    <p>Rendez-vous sur <a href="https://console.anthropic.com/" target="_blank" style="color: #8A2BE2;">console.anthropic.com</a> et créez votre compte développeur.</p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">2</span>Générer une clé API</h3>
+                    <p>Dans la console, allez dans "API Keys" et créez une nouvelle clé.</p>
+                    <div class="warning">
+                        <strong>⚠️ Important :</strong> Conservez votre clé API en sécurité et ne la partagez jamais.
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">3</span>Configuration</h3>
+                    <div class="code-block">
+                        <span class="highlight">API_KEY:</span> sk-ant-api03-...<br>
+                        <span class="highlight">Model:</span> claude-sonnet-4-20250514<br>
+                        <span class="highlight">Max Tokens:</span> 4096<br>
+                        <span class="highlight">Temperature:</span> 0.7
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">4</span>Test de l'API</h3>
+                    <p>Utilisez l'endpoint : <code>https://api.anthropic.com/v1/messages</code></p>
+                    <div class="info">
+                        <strong>💡 Astuce :</strong> Claude excelle dans les conversations longues et les tâches de raisonnement complexes.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="deepseek" class="content-section">
+            <div class="api-header">
+                <div class="api-icon">💻</div>
+                <div class="api-info">
+                    <h2>DeepSeek API</h2>
+                    <p>IA spécialisée pour le code et les tâches techniques avancées</p>
+                </div>
+            </div>
+            
+            <a href="https://platform.deepseek.com/" target="_blank" class="config-link">
+                🔗 Accéder à DeepSeek Platform
+            </a>
+
+            <div class="steps">
+                <div class="step">
+                    <h3><span class="step-number">1</span>Inscription</h3>
+                    <p>Créez votre compte sur <a href="https://platform.deepseek.com/" target="_blank" style="color: #8A2BE2;">platform.deepseek.com</a></p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">2</span>Obtenir l'API Key</h3>
+                    <p>Naviguez vers "API Keys" dans votre dashboard et générez une nouvelle clé.</p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">3</span>Configuration recommandée</h3>
+                    <div class="code-block">
+                        <span class="highlight">Model:</span> deepseek-reasoner<br>
+                        <span class="highlight">Max Tokens:</span> 8000<br>
+                        <span class="highlight">Temperature:</span> 0.1 (pour le code)<br>
+                        <span class="highlight">Top-p:</span> 0.95
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">4</span>Intégration</h3>
+                    <p>Endpoint : <code>https://api.deepseek.com/v1/chat/completions</code></p>
+                    <div class="info">
+                        <strong>🎯 Usage optimal :</strong> Parfait pour la génération de code, le debugging et l'optimisation.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="elevenlabs" class="content-section">
+            <div class="api-header">
+                <div class="api-icon">🎤</div>
+                <div class="api-info">
+                    <h2>ElevenLabs</h2>
+                    <p>Synthèse vocale premium avec voix ultra-réalistes</p>
+                </div>
+            </div>
+            
+            <a href="https://elevenlabs.io/app" target="_blank" class="config-link">
+                🔗 Accéder à ElevenLabs
+            </a>
+
+            <div class="steps">
+                <div class="step">
+                    <h3><span class="step-number">1</span>Compte Premium</h3>
+                    <p>Inscrivez-vous sur <a href="https://elevenlabs.io/" target="_blank" style="color: #8A2BE2;">elevenlabs.io</a> et souscrivez à un plan payant pour l'API.</p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">2</span>API Key</h3>
+                    <p>Dans votre profil, section "API Key", générez votre clé d'accès.</p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">3</span>Choisir les voix</h3>
+                    <div class="code-block">
+                        <span class="highlight">Voix recommandées :</span><br>
+                        • Rachel (Anglais, féminine)<br>
+                        • Adam (Anglais, masculin)<br>
+                        • Aria (Multilingue)<br>
+                        • Josh (Narrateur)
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">4</span>Configuration</h3>
+                    <p>API Endpoint : <code>https://api.elevenlabs.io/v1/text-to-speech</code></p>
+                    <div class="warning">
+                        <strong>💰 Coût :</strong> Facturé par caractère généré. Surveillez votre usage.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="azure" class="content-section">
+            <div class="api-header">
+                <div class="api-icon">☁️</div>
+                <div class="api-info">
+                    <h2>Azure Speech Services</h2>
+                    <p>Solution TTS de fallback fiable et économique</p>
+                </div>
+            </div>
+            
+            <a href="https://portal.azure.com/" target="_blank" class="config-link">
+                🔗 Accéder au Portail Azure
+            </a>
+
+            <div class="steps">
+                <div class="step">
+                    <h3><span class="step-number">1</span>Compte Azure</h3>
+                    <p>Créez un compte Microsoft Azure sur <a href="https://portal.azure.com/" target="_blank" style="color: #8A2BE2;">portal.azure.com</a></p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">2</span>Créer une ressource</h3>
+                    <p>Recherchez "Speech Services" et créez une nouvelle ressource dans votre région préférée.</p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">3</span>Récupérer les clés</h3>
+                    <div class="code-block">
+                        <span class="highlight">Subscription Key:</span> Votre clé d'abonnement<br>
+                        <span class="highlight">Region:</span> westeurope, eastus, etc.<br>
+                        <span class="highlight">Endpoint:</span> https://[region].tts.speech.microsoft.com/
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">4</span>Test</h3>
+                    <p>Utilisez Speech Studio pour tester les voix disponibles avant l'intégration.</p>
+                    <div class="info">
+                        <strong>💡 Avantage :</strong> Excellent rapport qualité-prix avec de nombreuses langues supportées.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="openai" class="content-section">
+            <div class="api-header">
+                <div class="api-icon">🗣️</div>
+                <div class="api-info">
+                    <h2>OpenAI Text-to-Speech</h2>
+                    <p>Solution TTS standard polyvalente et accessible</p>
+                </div>
+            </div>
+            
+            <a href="https://platform.openai.com/" target="_blank" class="config-link">
+                🔗 Accéder à OpenAI Platform
+            </a>
+
+            <div class="steps">
+                <div class="step">
+                    <h3><span class="step-number">1</span>Compte OpenAI</h3>
+                    <p>Inscrivez-vous sur <a href="https://platform.openai.com/" target="_blank" style="color: #8A2BE2;">platform.openai.com</a> et ajoutez un moyen de paiement.</p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">2</span>Générer une API Key</h3>
+                    <p>Dans "API Keys", créez une nouvelle clé secrète pour votre projet.</p>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">3</span>Modèles disponibles</h3>
+                    <div class="code-block">
+                        <span class="highlight">tts-1:</span> Standard, rapide<br>
+                        <span class="highlight">tts-1-hd:</span> Haute qualité<br>
+                        <span class="highlight">Voix:</span> alloy, echo, fable, onyx, nova, shimmer
+                    </div>
+                </div>
+
+                <div class="step">
+                    <h3><span class="step-number">4</span>Configuration</h3>
+                    <p>Endpoint : <code>https://api.openai.com/v1/audio/speech</code></p>
+                    <div class="info">
+                        <strong>⚡ Performance :</strong> Génération rapide, idéal pour les prototypes et tests.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showSection(sectionId) {
+            // Masquer toutes les sections
+            const sections = document.querySelectorAll('.content-section');
+            sections.forEach(section => {
+                section.classList.remove('active');
+            });
+
+            // Désactiver tous les onglets
+            const tabs = document.querySelectorAll('.nav-tab');
+            tabs.forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Afficher la section sélectionnée
+            document.getElementById(sectionId).classList.add('active');
+
+            // Activer l'onglet correspondant
+            event.target.classList.add('active');
+        }
+
+        // Animation au scroll
+        window.addEventListener('scroll', () => {
+            const steps = document.querySelectorAll('.step');
+            steps.forEach(step => {
+                const rect = step.getBoundingClientRect();
+                if (rect.top < window.innerHeight - 100) {
+                    step.style.opacity = '1';
+                    step.style.transform = 'translateX(0)';
+                }
+            });
+        });
+
+        // Initialisation
+        document.addEventListener('DOMContentLoaded', () => {
+            const steps = document.querySelectorAll('.step');
+            steps.forEach(step => {
+                step.style.opacity = '0.7';
+                step.style.transform = 'translateX(-10px)';
+                step.style.transition = 'all 0.3s ease';
+            });
+        });
+    </script>
+</body>
+</html>
