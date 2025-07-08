@@ -1,0 +1,397 @@
+{
+  "name": "ai-interactive-platform",
+  "version": "1.0.0",
+  "description": "Plateforme IA interactive multi-format avec génération de contenu",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "dev:frontend": "cd frontend && npm start",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:frontend\"",
+    "build": "cd frontend && npm run build",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "deploy:staging": "npm run build && docker-compose -f docker-compose.staging.yml up -d",
+    "deploy:prod": "npm run build && docker-compose -f docker-compose.prod.yml up -d",
+    "setup": "npm install && cd frontend && npm install",
+    "db:seed": "node scripts/seedDatabase.js",
+    "generate:epub": "node scripts/generateEpub.js",
+    "generate:mobile": "cd mobile && expo build:android",
+    "analytics": "node scripts/analytics.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "express-rate-limit": "^6.8.1",
+    "compression": "^1.7.4",
+    "socket.io": "^4.7.2",
+    "redis": "^4.6.7",
+    "mongoose": "^7.4.0",
+    "dotenv": "^16.3.1",
+    "joi": "^17.9.2",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.1",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.32.1",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.5.1",
+    "node-cron": "^3.0.2",
+    "winston": "^3.10.0",
+    "morgan": "^1.10.0",
+    "@anthropic-ai/sdk": "^0.20.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "concurrently": "^8.2.0",
+    "jest": "^29.6.1",
+    "supertest": "^6.3.3",
+    "eslint": "^8.45.0",
+    "eslint-config-node": "^4.1.0",
+    "prettier": "^3.0.0",
+    "@types/node": "^20.4.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "keywords": [
+    "ai",
+    "claude",
+    "deepseek",
+    "epub",
+    "mobile",
+    "interactive",
+    "multimedia",
+    "tts",
+    "animation"
+  ],
+  "author": "Votre Nom",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/votre-username/ai-interactive-platform"
+  }
+}
+
+// ===== DOCKER-COMPOSE.YML =====
+version: '3.8'
+
+services:
+  # Backend API
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://mongo:27017/ai-platform
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - mongo
+      - redis
+    volumes:
+      - .:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # Frontend React
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000/api
+      - REACT_APP_WS_URL=http://localhost:5000
+    depends_on:
+      - api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # Services Python (TTS, Animations)
+  python-services:
+    build:
+      context: ./python-services
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./python-services:/app
+    restart: unless-stopped
+
+  # Base de données MongoDB
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password123
+      - MONGO_INITDB_DATABASE=ai-platform
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    restart: unless-stopped
+
+  # Cache Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:
+  grafana_data:
+
+networks:
+  default:
+    name: ai-platform-network
+
+// ===== DOCKERFILE.BACKEND =====
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Installation des dépendances système
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    cairo-dev \
+    jpeg-dev \
+    pango-dev \
+    giflib-dev
+
+# Copie des fichiers de dépendances
+COPY package*.json ./
+
+# Installation des dépendances Node.js
+RUN npm ci --only=production
+
+# Copie du code source
+COPY . .
+
+# Création d'un utilisateur non-root
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
+USER nodejs
+
+EXPOSE 5000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:5000/health || exit 1
+
+CMD ["npm", "start"]
+
+// ===== .ENV.EXAMPLE =====
+# API Keys
+CLAUDE_API_KEY=your_claude_api_key_here
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+AZURE_SPEECH_KEY=your_azure_speech_key_here
+AZURE_SPEECH_REGION=your_azure_region_here
+
+# Database
+MONGODB_URI=mongodb://localhost:27017/ai-platform
+REDIS_URL=redis://localhost:6379
+
+# Security
+JWT_SECRET=your_super_secret_jwt_key_here
+BCRYPT_ROUNDS=12
+
+# Application
+NODE_ENV=development
+PORT=5000
+FRONTEND_URL=http://localhost:3000
+
+# File Upload
+MAX_FILE_SIZE=10485760
+UPLOAD_PATH=./uploads
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+// ===== SCRIPTS/SETUP.JS =====
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+console.log('🚀 Configuration initiale du projet...');
+
+// Créer les dossiers nécessaires
+const folders = [
+  'uploads',
+  'logs',
+  'exports/epub',
+  'exports/mobile',
+  'frontend/src/components',
+  'frontend/src/services',
+  'frontend/src/utils',
+  'python-services/tts',
+  'python-services/animations',
+  'scripts',
+  'tests'
+];
+
+folders.forEach(folder => {
+  const fullPath = path.join(process.cwd(), folder);
+  if (!fs.existsSync(fullPath)) {
+    fs.mkdirSync(fullPath, { recursive: true });
+    console.log(`✅ Dossier créé: ${folder}`);
+  }
+});
+
+// Copier le fichier .env
+if (!fs.existsSync('.env')) {
+  fs.copyFileSync('.env.example', '.env');
+  console.log('✅ Fichier .env créé');
+}
+
+// Installer les dépendances
+console.log('📦 Installation des dépendances...');
+execSync('npm install', { stdio: 'inherit' });
+
+// Initialiser le frontend
+console.log('🎨 Configuration du frontend...');
+if (!fs.existsSync('frontend/package.json')) {
+  execSync('npx create-react-app frontend', { stdio: 'inherit' });
+}
+
+// Configuration Git hooks
+console.log('🔧 Configuration des hooks Git...');
+execSync('npx husky install', { stdio: 'inherit' });
+
+console.log('✅ Configuration terminée !');
+console.log('📋 Prochaines étapes:');
+console.log('1. Configurer vos clés API dans le fichier .env');
+console.log('2. Lancer avec: npm run dev:all');
+console.log('3. Ouvrir http://localhost:3000');
+
+// ===== SCRIPTS/GENERATE-EPUB.JS =====
+const fs = require('fs');
+const path = require('path');
+const archiver = require('archiver');
+
+class EPubGenerator {
+  constructor(options = {}) {
+    this.title = options.title || 'Document Interactif';
+    this.author = options.author || 'IA Platform';
+    this.language = options.language || 'fr';
+    this.outputPath = options.outputPath || './exports/epub';
+  }
+
+  async generateEPub(content, animations, audio) {
+    console.log('📖 Génération ePub3 en cours...');
+    
+    const epubStructure = {
+      'mimetype': 'application/epub+zip',
+      'META-INF/container.xml': this.generateContainerXml(),
+      'OEBPS/content.opf': this.generateContentOpf(content),
+      'OEBPS/toc.ncx': this.generateTocNcx(content),
+      'OEBPS/nav.xhtml': this.generateNav(content),
+      'OEBPS/styles/main.css': this.generateCSS(),
+      'OEBPS/js/interactions.js': this.generateJS(),
+      ...this.generateContentFiles(content, animations, audio)
+    };
+
+    // Créer l'archive ePub
+    const output = fs.createWriteStream(path.join(this.outputPath, `${this.title}.epub`));
+    const archive = archiver('zip', { store: true });
+
+    return new Promise((resolve, reject) => {
+      output.on('close', () => {
+        console.log('✅ ePub généré avec succès');
+        resolve(path.join(this.outputPath, `${this.title}.epub`));
+      });
+
+      archive.on('error', reject);
+      archive.pipe(output);
+
+      // Ajouter les fichiers
+      Object.entries(epubStructure).forEach(([filename, content]) => {
+        archive.append(content, { name: filename });
+      });
+
+      archive.finalize();
+    });
+  }
+
+  generateCSS() {
+    return `
+      /* Styles ePub3 avec animations */
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      
+      .animated { animation: fadeIn 1s ease-out; }
+      .interactive { cursor: pointer; transition: all 0.3s; }
+      .interactive:hover { transform: scale(1.05); }
+      
+      .lottie-container { width: 100%; height: 300px; }
+      .audio-player { margin: 20px 0; }
+    `;
+  }
+
+  generateJS() {
+    return `
+      // JavaScript pour ePub3 interactif
+      document.addEventListener('DOMContentLoaded', function() {
+        // Initialiser les animations Lottie
+        const lottieContainers = document.querySelectorAll('.lottie-container');
+        lottieContainers.forEach(container => {
+          // Code d'animation Lottie
+        });
+
+        // Gestionnaire audio
+        const audioElements = document.querySelectorAll('audio');
+        audioElements.forEach(audio => {
+          audio.addEventListener('play', function() {
+            // Synchronisation avec animations
+          });
+        });
+      });
+    `;
+  }
+}
+
+module.exports = EPubGenerator;

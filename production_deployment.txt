@@ -1,0 +1,711 @@
+# ===== DOCKER-COMPOSE.PROD.YML =====
+version: '3.8'
+
+services:
+  # Reverse Proxy Nginx
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - api
+      - frontend
+    restart: unless-stopped
+    networks:
+      - ai-platform-network
+
+  # Frontend Production
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        - REACT_APP_API_URL=https://api.yourplatform.com
+        - REACT_APP_WS_URL=wss://api.yourplatform.com
+        - REACT_APP_ANALYTICS_ID=${ANALYTICS_ID}
+    expose:
+      - "80"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    networks:
+      - ai-platform-network
+
+  # Backend API Production
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    expose:
+      - "5000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=${MONGODB_URI}
+      - REDIS_URL=${REDIS_URL}
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+    depends_on:
+      - mongo
+      - redis
+      - prometheus
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ai-platform-network
+
+  # Services Python Production
+  python-services:
+    build:
+      context: ./python-services
+      dockerfile: Dockerfile.prod
+    expose:
+      - "8000"
+    environment:
+      - PYTHONPATH=/app
+      - ENVIRONMENT=production
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY}
+    volumes:
+      - ./exports:/app/exports
+      - ./temp:/app/temp
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+    networks:
+      - ai-platform-network
+
+  # Base de données MongoDB
+  mongo:
+    image: mongo:7
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=ai-platform
+    volumes:
+      - mongo_data:/data/db
+      - ./backup:/backup
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+    networks:
+      - ai-platform-network
+
+  # Cache Redis
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+    networks:
+      - ai-platform-network
+
+  # Monitoring Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - ai-platform-network
+
+  # Monitoring Grafana
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    restart: unless-stopped
+    networks:
+      - ai-platform-network
+
+  # Logs Centralisés
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+    networks:
+      - ai-platform-network
+
+  # Collecteur de logs
+  promtail:
+    image: grafana/promtail:latest
+    volumes:
+      - ./logs:/var/log
+      - ./monitoring/promtail.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    restart: unless-stopped
+    networks:
+      - ai-platform-network
+
+  # Analytics et métriques
+  analytics-service:
+    build:
+      context: ./analytics
+      dockerfile: Dockerfile
+    expose:
+      - "9000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=${MONGODB_URI}
+      - ANALYTICS_SECRET=${ANALYTICS_SECRET}
+    depends_on:
+      - mongo
+    restart: unless-stopped
+    networks:
+      - ai-platform-network
+
+volumes:
+  mongo_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+
+networks:
+  ai-platform-network:
+    driver: bridge
+
+---
+
+# ===== NGINX/NGINX.CONF =====
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    # Logs
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+    error_log /var/log/nginx/error.log warn;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 10240;
+    gzip_proxied expired no-cache no-store private must-revalidate proxy-revalidate;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/x-javascript
+        application/javascript
+        application/xml+rss
+        application/json;
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=upload:10m rate=1r/s;
+
+    # SSL Configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Frontend
+    server {
+        listen 80;
+        listen 443 ssl http2;
+        server_name yourplatform.com www.yourplatform.com;
+
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+        # Redirect HTTP to HTTPS
+        if ($scheme != "https") {
+            return 301 https://$host$request_uri;
+        }
+
+        location / {
+            proxy_pass http://frontend:80;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Cache static assets
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+        }
+    }
+
+    # API Backend
+    server {
+        listen 80;
+        listen 443 ssl http2;
+        server_name api.yourplatform.com;
+
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+        # API endpoints
+        location /api/ {
+            limit_req zone=api burst=20 nodelay;
+            
+            proxy_pass http://api:5000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # CORS
+            add_header Access-Control-Allow-Origin "https://yourplatform.com" always;
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Authorization, Content-Type" always;
+        }
+
+        # WebSocket
+        location /socket.io/ {
+            proxy_pass http://api:5000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+        }
+
+        # Python services
+        location /python/ {
+            limit_req zone=api burst=10 nodelay;
+            
+            proxy_pass http://python-services:8000/api/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Upload size limit
+            client_max_body_size 50M;
+        }
+
+        # File uploads
+        location /upload/ {
+            limit_req zone=upload burst=5 nodelay;
+            client_max_body_size 100M;
+            proxy_pass http://api:5000;
+        }
+    }
+
+    # Monitoring
+    server {
+        listen 80;
+        server_name monitoring.yourplatform.com;
+        
+        location / {
+            auth_basic "Monitoring Access";
+            auth_basic_user_file /etc/nginx/.htpasswd;
+            
+            proxy_pass http://grafana:3000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+        
+        location /prometheus/ {
+            auth_basic "Prometheus Access";
+            auth_basic_user_file /etc/nginx/.htpasswd;
+            
+            proxy_pass http://prometheus:9090/;
+            proxy_set_header Host $host;
+        }
+    }
+}
+
+---
+
+# ===== MONITORING/PROMETHEUS.YML =====
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # API Backend metrics
+  - job_name: 'ai-platform-api'
+    static_configs:
+      - targets: ['api:5000']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Python services metrics
+  - job_name: 'python-services'
+    static_configs:
+      - targets: ['python-services:8000']
+    metrics_path: /metrics
+
+  # MongoDB metrics
+  - job_name: 'mongodb'
+    static_configs:
+      - targets: ['mongo:27017']
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  # Node exporter (system metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Nginx metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:9113']
+
+---
+
+# ===== KUBERNETES/DEPLOYMENT.YAML =====
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-api
+  labels:
+    app: ai-platform-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-platform-api
+  template:
+    metadata:
+      labels:
+        app: ai-platform-api
+    spec:
+      containers:
+      - name: api
+        image: yourregistry/ai-platform-api:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: ai-platform-secrets
+              key: mongodb-uri
+        - name: CLAUDE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-platform-secrets
+              key: claude-api-key
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+
+---
+
+# ===== SCRIPTS/DEPLOY.SH =====
+#!/bin/bash
+
+set -e
+
+echo "🚀 Déploiement AI Platform Production"
+
+# Variables
+ENVIRONMENT=${1:-production}
+VERSION=${2:-latest}
+REGISTRY="yourregistry.com"
+
+echo "📋 Environment: $ENVIRONMENT"
+echo "🏷️  Version: $VERSION"
+
+# 1. Tests pré-déploiement
+echo "🧪 Exécution des tests..."
+npm run test:ci
+npm run test:e2e
+
+# 2. Build des images
+echo "🏗️  Build des images Docker..."
+docker build -t $REGISTRY/ai-platform-api:$VERSION .
+docker build -t $REGISTRY/ai-platform-frontend:$VERSION ./frontend
+docker build -t $REGISTRY/ai-platform-python:$VERSION ./python-services
+
+# 3. Push vers le registry
+echo "📤 Push vers le registry..."
+docker push $REGISTRY/ai-platform-api:$VERSION
+docker push $REGISTRY/ai-platform-frontend:$VERSION
+docker push $REGISTRY/ai-platform-python:$VERSION
+
+# 4. Backup base de données
+echo "💾 Backup de la base de données..."
+./scripts/backup-db.sh $ENVIRONMENT
+
+# 5. Déploiement
+if [ "$ENVIRONMENT" = "production" ]; then
+    echo "🚀 Déploiement en production..."
+    
+    # Rolling update
+    kubectl set image deployment/ai-platform-api api=$REGISTRY/ai-platform-api:$VERSION
+    kubectl set image deployment/ai-platform-frontend frontend=$REGISTRY/ai-platform-frontend:$VERSION
+    kubectl set image deployment/ai-platform-python python=$REGISTRY/ai-platform-python:$VERSION
+    
+    # Attente du déploiement
+    kubectl rollout status deployment/ai-platform-api
+    kubectl rollout status deployment/ai-platform-frontend
+    kubectl rollout status deployment/ai-platform-python
+    
+else
+    echo "🧪 Déploiement en staging..."
+    docker-compose -f docker-compose.staging.yml up -d
+fi
+
+# 6. Tests post-déploiement
+echo "✅ Tests post-déploiement..."
+sleep 30
+curl -f https://api.yourplatform.com/health || exit 1
+curl -f https://yourplatform.com || exit 1
+
+# 7. Monitoring
+echo "📊 Vérification du monitoring..."
+curl -f http://monitoring.yourplatform.com/api/health || echo "⚠️  Monitoring non accessible"
+
+echo "✅ Déploiement terminé avec succès !"
+
+---
+
+# ===== ANALYTICS/SERVICE.JS =====
+const express = require('express');
+const mongoose = require('mongoose');
+const { promisify } = require('util');
+const redis = require('redis');
+
+const app = express();
+app.use(express.json());
+
+// Modèles analytics
+const AnalyticsSchema = new mongoose.Schema({
+  userId: String,
+  sessionId: String,
+  event: String,
+  data: Object,
+  timestamp: { type: Date, default: Date.now },
+  metadata: {
+    userAgent: String,
+    ip: String,
+    country: String,
+    device: String
+  }
+});
+
+const Analytics = mongoose.model('Analytics', AnalyticsSchema);
+
+// Métriques en temps réel
+const MetricsSchema = new mongoose.Schema({
+  metric: String,
+  value: Number,
+  tags: Object,
+  timestamp: { type: Date, default: Date.now }
+});
+
+const Metrics = mongoose.model('Metrics', MetricsSchema);
+
+// Client Redis pour cache
+const redisClient = redis.createClient(process.env.REDIS_URL);
+
+// Routes analytics
+app.post('/track', async (req, res) => {
+  try {
+    const { userId, sessionId, event, data } = req.body;
+    
+    const analyticsEvent = new Analytics({
+      userId,
+      sessionId,
+      event,
+      data,
+      metadata: {
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+        // Géolocalisation via service externe
+      }
+    });
+    
+    await analyticsEvent.save();
+    
+    // Mise à jour métriques temps réel
+    await updateRealTimeMetrics(event, data);
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/dashboard/stats', async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const stats = await Analytics.aggregate([
+      { $match: { timestamp: { $gte: today } } },
+      {
+        $group: {
+          _id: '$event',
+          count: { $sum: 1 },
+          uniqueUsers: { $addToSet: '$userId' }
+        }
+      },
+      {
+        $project: {
+          event: '$_id',
+          count: 1,
+          uniqueUsers: { $size: '$uniqueUsers' }
+        }
+      }
+    ]);
+    
+    res.json({ stats, timestamp: new Date() });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+async function updateRealTimeMetrics(event, data) {
+  const key = `metrics:${event}:${new Date().toISOString().slice(0, 13)}`; // Par heure
+  await redisClient.incr(key);
+  await redisClient.expire(key, 86400); // 24h
+}
+
+const PORT = process.env.PORT || 9000;
+app.listen(PORT, () => {
+  console.log(`📊 Analytics service running on port ${PORT}`);
+});
+
+---
+
+# ===== SCRIPTS/MONITORING.SH =====
+#!/bin/bash
+
+# Script de monitoring automatisé
+
+echo "📊 Monitoring AI Platform"
+
+# Vérification services principaux
+check_service() {
+    local service=$1
+    local url=$2
+    
+    if curl -f -s "$url" > /dev/null; then
+        echo "✅ $service: OK"
+    else
+        echo "❌ $service: ERREUR"
+        # Notification Slack/Discord
+        curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"🚨 Service $service down!\"}" \
+            $SLACK_WEBHOOK_URL
+    fi
+}
+
+# Vérifications
+check_service "Frontend" "https://yourplatform.com"
+check_service "API" "https://api.yourplatform.com/health"
+check_service "Python Services" "https://api.yourplatform.com/python/health"
+check_service "Grafana" "http://monitoring.yourplatform.com"
+
+# Métriques système
+echo "📈 Métriques système:"
+docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+
+# Logs récents
+echo "📝 Erreurs récentes:"
+docker logs ai-platform-api --tail=10 | grep ERROR || echo "Aucune erreur récente"
+
+echo "✅ Monitoring terminé"
